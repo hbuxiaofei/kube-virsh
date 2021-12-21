@@ -1,13 +1,10 @@
-use k8s_openapi::api::batch::v1::Job;
-use k8s_openapi::api::core::v1::Pod;
-use k8s_openapi::api::core::v1::{ContainerStatus, PodSpec};
+use k8s_openapi::api::core::v1::{Pod, PodSpec};
 
 use futures::{StreamExt, TryStreamExt};
 
 use kube::{
     api::{
-        Api, AttachParams, AttachedProcess, DeleteParams, ListParams, NotUsed, Object, PostParams,
-        ResourceExt, WatchEvent,
+        Api, AttachParams, AttachedProcess, ListParams, NotUsed, Object, ResourceExt, WatchEvent,
     },
     Client,
 };
@@ -21,7 +18,6 @@ async fn main() -> anyhow::Result<()> {
     std::env::set_var("RUST_LOG", "info,kube=info");
 
     env_logger::init();
-    info!(">>> start...");
 
     let client = Client::try_default().await?;
 
@@ -38,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         if ns.starts_with("tenant-") {
             let pod_name = p.metadata.name.as_ref().unwrap();
             let node_name = p.spec.node_name.as_ref().unwrap();
+            let node_selector = p.spec.node_selector.as_ref().unwrap();
 
             // println!("{:<32}{:<32}{:<32}", node_name, ns, &pod_name);
 
@@ -51,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
 
             while let Some(status) = stream.try_next().await? {
                 match status {
-                    WatchEvent::Added(o) => {
+                    WatchEvent::Added(_) => {
                         // info!("Added {}", o.name());
                         break;
                     }
@@ -74,18 +71,27 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
             let output = get_output(attached).await;
+
+            let pod_arch = node_selector
+                .get("kubernetes.io/arch")
+                .unwrap()
+                .replace('\"', "");
             if output.len() > 0 {
                 let pos: Vec<&str> = output.split(" ").collect();
 
                 println!(
-                    "{:<32}{:<32}{:<32}{:<10}",
+                    "{:<8}{:<32}{:<32}{:<32}{:<10}",
+                    pod_arch,
                     node_name,
                     ns,
                     &pod_name,
                     pos[pos.len() - 1].replace('\n', "")
                 );
             } else {
-                println!("{:<32}{:<32}{:<32}-", node_name, ns, &pod_name);
+                println!(
+                    "{:<8}{:<32}{:<32}{:<32}-",
+                    pod_arch, node_name, ns, &pod_name
+                );
             }
         }
     }
