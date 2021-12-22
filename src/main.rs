@@ -1,18 +1,28 @@
-use k8s_openapi::api::core::v1::{Pod, PodSpec, PodStatus};
-
 use futures::{StreamExt, TryStreamExt};
+use log::info;
+use std::collections::HashMap;
 
 use kube::{
     api::{Api, AttachParams, AttachedProcess, ListParams, Object, WatchEvent},
+    discovery::ApiResource,
     Client,
 };
 
-use kube::discovery::ApiResource;
+use k8s_openapi::api::core::v1::{Pod, PodSpec, PodStatus};
 
-use log::info;
+struct PodInfo {
+    arch: String,
+    node_name: String,
+    ns: String,
+    pod_name: String,
+    pod_status: String,
+    vm_status: String,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let mut pod_map = HashMap::new();
+
     std::env::set_var("RUST_LOG", "info,kube=info");
 
     env_logger::init();
@@ -30,34 +40,59 @@ async fn main() -> anyhow::Result<()> {
         let ns = p.metadata.namespace.as_ref().unwrap();
 
         if ns.starts_with("tenant-") {
+            let pod_name = p.metadata.name.as_ref().unwrap();
+            if !pod_name.starts_with("ecs-") {
+                continue;
+            }
+
             let node_selector = p.spec.node_selector.as_ref().unwrap();
             let pod_arch = node_selector
                 .get("kubernetes.io/arch")
                 .unwrap()
                 .replace('"', "");
 
-            let node_name = p.spec.node_name.as_ref().unwrap();
-
-            let pod_name = p.metadata.name.as_ref().unwrap();
+            let node_name = p.spec.node_name.unwrap_or("None".to_string());
 
             let pod_status = p.status.unwrap().phase.unwrap();
 
-            let mut status = format!("{}/-", pod_status);
-            if pod_status == "Running" {
-                let vm_status = get_vm_status(client.clone(), &ns, &pod_name).await?;
-                if vm_status.len() > 0 {
-                    status = format!("{}/{}", pod_status, vm_status);
-                }
-            }
-
-            println!(
-                "{:<8}{:<32}{:<32}{:<32}{:<10}",
-                pod_arch, node_name, ns, &pod_name, status
-            );
-            // println!(">>> {:?}", p);
+            let pod_info = PodInfo {
+                arch: pod_arch,
+                node_name: node_name,
+                ns: ns.to_string(),
+                pod_name: pod_name.to_string(),
+                pod_status: pod_status,
+                vm_status: String::from(""),
+            };
+            pod_map.insert(pod_name.to_string(), pod_info);
         }
     }
 
+    // for (_, v) in &mut pod_map {
+    //     if v.pod_status == "Running" {
+    //         let vm_status = get_vm_status(client.clone(), &v.ns, &v.pod_name).await;
+    //         v.vm_status = vm_status.unwrap();
+    //     }
+    // }
+
+    let mut fs = Vec::new();
+    for (_, v) in &mut pod_map {
+        if v.pod_status == "Running" {
+            let f = async {
+                let vm_status = get_vm_status(client.clone(), &v.ns, &v.pod_name).await;
+                v.vm_status = vm_status.unwrap();
+            };
+            fs.push(f); // futures::executor::block_on(f);
+        }
+    }
+    futures::future::join_all(fs).await;
+
+    for (_, v) in &pod_map {
+        let status = format!("{}/{}", v.pod_status, v.vm_status);
+        println!(
+            "{:<8}{:<32}{:<32}{:<32}{:<10}",
+            v.arch, v.node_name, v.ns, v.pod_name, status
+        );
+    }
     Ok(())
 }
 
