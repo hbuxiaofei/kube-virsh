@@ -36,16 +36,18 @@ async fn main() -> anyhow::Result<()> {
     let pod_simple: Api<PodSimple> = Api::all_with(client.clone(), &ar);
 
     for p in pod_simple.list(&Default::default()).await? {
+        // println!(">>>Pod: {:?}", p);
+
         // info!("Found pod {} running: {:?}", p.name(), p.spec.containers);
-        let ns = p.metadata.namespace.as_ref().unwrap();
+        let ns = p.metadata.namespace.unwrap();
 
         if ns.starts_with("tenant-") {
-            let pod_name = p.metadata.name.as_ref().unwrap();
+            let pod_name = p.metadata.name.unwrap();
             if !pod_name.starts_with("ecs-") {
                 continue;
             }
 
-            let node_selector = p.spec.node_selector.as_ref().unwrap();
+            let node_selector = p.spec.node_selector.unwrap();
             let pod_arch = node_selector
                 .get("kubernetes.io/arch")
                 .unwrap()
@@ -53,7 +55,32 @@ async fn main() -> anyhow::Result<()> {
 
             let node_name = p.spec.node_name.unwrap_or("None".to_string());
 
-            let pod_status = p.status.unwrap().phase.unwrap();
+            // let pod_status = p.status.unwrap().phase.unwrap();
+            let container_statuses = p.status.unwrap().container_statuses.unwrap();
+            let state = container_statuses.get(0).unwrap().state.as_ref().unwrap();
+            let mut pod_status = String::from("None");
+            if state.running.is_some() {
+                pod_status = String::from("Running");
+            } else if state.terminated.is_some() {
+                pod_status = state
+                    .terminated
+                    .as_ref()
+                    .unwrap()
+                    .reason
+                    .as_ref()
+                    .unwrap()
+                    .to_string();
+            } else if state.waiting.is_some() {
+                // pod_status = String::from("Waiting");
+                pod_status = state
+                    .waiting
+                    .as_ref()
+                    .unwrap()
+                    .reason
+                    .as_ref()
+                    .unwrap()
+                    .to_string();
+            }
 
             let pod_info = PodInfo {
                 arch: pod_arch,
@@ -79,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
         if v.pod_status == "Running" {
             let f = async {
                 let vm_status = get_vm_status(client.clone(), &v.ns, &v.pod_name).await;
-                v.vm_status = vm_status.unwrap();
+                v.vm_status = vm_status.unwrap_or("None".to_string());
             };
             fs.push(f); // futures::executor::block_on(f);
         }
