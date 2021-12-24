@@ -29,7 +29,7 @@ pub async fn pod_exec(pod_short: &str, command: &str) -> anyhow::Result<()> {
     for p in pod_simple.list(&Default::default()).await? {
         let ns = p.metadata.namespace.unwrap();
 
-        if ns.starts_with("tenant-") {
+        if ns.starts_with("tenant-") || ns == "product-ecs" {
             let pod_name = p.metadata.name.unwrap();
             if !pod_name.contains(pod_short) {
                 continue;
@@ -61,7 +61,11 @@ fn convert_command(cmd: &str, pod_name: &str) -> Option<String> {
     if cmd == "getxml" {
         return Some(format!("virsh dumpxml {}-{} --inactive", pos[0], pos[1]));
     } else if cmd == "logs" {
-        return Some(format!("cat /var/log/libvirt/libvirtd.log"));
+        if pod_name.starts_with("ecs-node-agent-") {
+            return Some(format!("cat /var/log/node-agent/ecs-node-agent.log"));
+        } else {
+            return Some(format!("cat /var/log/libvirt/libvirtd.log"));
+        }
     }
 
     return None;

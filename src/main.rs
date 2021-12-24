@@ -16,7 +16,7 @@ async fn main() {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    let matches = clap::App::new("Kube virsh command")
+    let matches = clap::App::new("Kube virsh command tools.")
         .version("0.1.0")
         .author("Anonymous <anonymous@anonymous.net>")
         .arg(
@@ -24,7 +24,7 @@ async fn main() {
                 .short("p")
                 .long("pod")
                 .takes_value(true)
-                .help("The pod type. Value is ecs or agent, Default is ecs."),
+                .help("The pod type, ecs/agent."),
         )
         .subcommand(
             clap::SubCommand::with_name("list")
@@ -79,6 +79,11 @@ async fn main() {
     } else if pod_type == "agent" {
         if let Some(_) = matches.subcommand_matches("list") {
             if let Err(e) = list::pod_list("product-ecs", "ecs-node-agent-", false).await {
+                log::error!("{}", e);
+            }
+        } else if let Some(matches) = matches.subcommand_matches("logs") {
+            let pod_short = matches.value_of("name").unwrap_or("None");
+            if let Err(e) = exec::pod_exec(pod_short, "logs").await {
                 log::error!("{}", e);
             }
         }
