@@ -16,7 +16,7 @@ async fn main() {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    let matches = clap::App::new("Kube virsh command tools.")
+    let matches = clap::App::new("kube-virsh")
         .version("0.1.0")
         .author("Anonymous <anonymous@anonymous.net>")
         .arg(
