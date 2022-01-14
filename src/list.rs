@@ -17,6 +17,7 @@ struct PodInfo {
     pod_name: String,
     pod_status: String,
     vm_status: String,
+    start_time: String,
 }
 
 pub async fn pod_list(prefix_ns: &str, prefix_pod: &str, with_virsh: bool) -> anyhow::Result<()> {
@@ -51,7 +52,13 @@ pub async fn pod_list(prefix_ns: &str, prefix_pod: &str, with_virsh: bool) -> an
             let node_name = p.spec.node_name.unwrap_or("None".to_string());
 
             // let pod_status = p.status.unwrap().phase.unwrap();
-            let container_statuses = p.status.unwrap().container_statuses.unwrap();
+            let container_statuses = p
+                .status
+                .as_ref()
+                .unwrap()
+                .container_statuses
+                .as_ref()
+                .unwrap();
             let state = container_statuses.get(0).unwrap().state.as_ref().unwrap();
             let mut pod_status = String::from("None");
             if state.running.is_some() {
@@ -77,6 +84,8 @@ pub async fn pod_list(prefix_ns: &str, prefix_pod: &str, with_virsh: bool) -> an
                     .to_string();
             }
 
+            let start_time = p.status.unwrap().start_time.unwrap();
+
             let pod_info = PodInfo {
                 arch: pod_arch,
                 node_name: node_name,
@@ -84,6 +93,7 @@ pub async fn pod_list(prefix_ns: &str, prefix_pod: &str, with_virsh: bool) -> an
                 pod_name: pod_name.to_string(),
                 pod_status: pod_status,
                 vm_status: String::from(""),
+                start_time: format!("{:?}", start_time.0),
             };
             pod_map.insert(pod_name.to_string(), pod_info);
         }
@@ -115,13 +125,13 @@ pub async fn pod_list(prefix_ns: &str, prefix_pod: &str, with_virsh: bool) -> an
         if with_virsh {
             status = format!("{}/{}", v.pod_status, v.vm_status);
             println!(
-                "{:<8}{:<32}{:<32}{:<32}{:<10}",
-                v.arch, v.node_name, v.ns, v.pod_name, status
+                "{:<8}{:<25}{:<25}{:<25}{:<20}{:<25}",
+                v.arch, v.node_name, v.ns, v.pod_name, status, v.start_time
             );
         } else {
             println!(
-                "{:<32}{:<32}{:<32}{:<10}",
-                v.node_name, v.ns, v.pod_name, status
+                "{:<25}{:<25}{:<25}{:<20}{:<25}",
+                v.node_name, v.ns, v.pod_name, status, v.start_time
             );
         }
     }
